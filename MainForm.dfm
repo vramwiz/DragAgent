@@ -1,0 +1,84 @@
+object FormMain: TFormMain
+  Left = 0
+  Top = 0
+  Caption = #20182#12398#12450#12503#12522#12408'D&D'
+  ClientHeight = 354
+  ClientWidth = 257
+  Color = clBtnFace
+  Font.Charset = DEFAULT_CHARSET
+  Font.Color = clWindowText
+  Font.Height = -11
+  Font.Name = 'Tahoma'
+  Font.Style = []
+  OldCreateOrder = False
+  Position = poScreenCenter
+  OnCreate = FormCreate
+  OnDestroy = FormDestroy
+  OnShow = FormShow
+  PixelsPerInch = 96
+  TextHeight = 13
+  object Panel1: TPanel
+    Left = 0
+    Top = 0
+    Width = 257
+    Height = 25
+    Align = alTop
+    Caption = 'Text'
+    TabOrder = 0
+    ExplicitLeft = 56
+    ExplicitTop = 96
+    ExplicitWidth = 185
+  end
+  object ListBox1: TListBox
+    Left = 0
+    Top = 25
+    Width = 257
+    Height = 72
+    Align = alTop
+    ItemHeight = 13
+    TabOrder = 1
+  end
+  object Panel2: TPanel
+    Left = 0
+    Top = 97
+    Width = 257
+    Height = 25
+    Align = alTop
+    Caption = 'Html'
+    TabOrder = 2
+    ExplicitTop = 91
+  end
+  object ListBox2: TListBox
+    Left = 0
+    Top = 122
+    Width = 257
+    Height = 72
+    Align = alTop
+    ItemHeight = 13
+    TabOrder = 3
+    ExplicitTop = 257
+  end
+  object Panel3: TPanel
+    Left = 0
+    Top = 194
+    Width = 257
+    Height = 25
+    Align = alTop
+    Caption = 'File'
+    TabOrder = 4
+    ExplicitLeft = -8
+    ExplicitTop = 242
+  end
+  object ListBox3: TListBox
+    Left = 0
+    Top = 219
+    Width = 257
+    Height = 135
+    Align = alClient
+    ItemHeight = 13
+    TabOrder = 5
+    ExplicitLeft = -8
+    ExplicitTop = 290
+    ExplicitHeight = 72
+  end
+end
