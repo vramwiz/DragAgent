@@ -400,7 +400,7 @@ begin
   FileNames := TStringList.Create;
   try
     DoDragRequestFiles(FileNames);                    // D&D用データ作成要求
-    if FileNames.Count = 0 then exit;                 // データが作成されていない場合は処理しない
+    //if FileNames.Count = 0 then exit;                 // データが作成されていない場合は処理しない
     SetDragFiles(FileNames);                          // 指定されたファイル名をドロップデータとする
   finally
     FileNames.Free;
@@ -454,6 +454,7 @@ procedure TDragShellFile.DoDragDataMake(const Reset : Boolean);
 var
   slst : TStringList;
   i : Integer;
+  s :string;
 begin
   if Reset then  FDragFiles.Clear;                               // 初期化フラグTrueで初期化
 
@@ -461,7 +462,9 @@ begin
   try
     if FDragFiles.Count = 0 then exit;
     for i := 0 to FDragFiles.Count-1 do begin                    // ファイルの数だけループ
-      slst.Add(FDragFiles[i]);                                   // ファイルを追加
+      s := FDragFiles[i];
+      if s = '' then continue;
+      slst.Add(s);                                               // ファイルを追加
     end;
     FDataObject := GetFileListDataObject(FDragFolder,slst);      //ファイル名からIDataObjectを取得
   finally
@@ -473,6 +476,8 @@ procedure TDragShellFile.SetDragFiles(ts: TStringList);
 var
   i: Integer;
 begin
+  FDragFolder := '';
+  FDragFiles.Clear;
   if ts.Count = 0 then exit;
   FDragFolder := ExtractFilePath(ts[0]);
   FDragFiles.Clear;
