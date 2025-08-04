@@ -25,60 +25,86 @@ object FormMain: TFormMain
     Align = alTop
     Caption = 'Text'
     TabOrder = 0
-    ExplicitLeft = 56
-    ExplicitTop = 96
-    ExplicitWidth = 185
   end
   object ListBox1: TListBox
     Left = 0
     Top = 25
     Width = 257
-    Height = 72
+    Height = 40
     Align = alTop
     ItemHeight = 13
     TabOrder = 1
   end
   object Panel2: TPanel
     Left = 0
-    Top = 97
+    Top = 65
     Width = 257
     Height = 25
     Align = alTop
     Caption = 'Html'
     TabOrder = 2
-    ExplicitTop = 91
+    ExplicitTop = 97
   end
   object ListBox2: TListBox
     Left = 0
-    Top = 122
+    Top = 90
     Width = 257
-    Height = 72
+    Height = 47
     Align = alTop
     ItemHeight = 13
     TabOrder = 3
-    ExplicitTop = 257
   end
   object Panel3: TPanel
     Left = 0
-    Top = 194
+    Top = 137
     Width = 257
     Height = 25
     Align = alTop
     Caption = 'File'
     TabOrder = 4
-    ExplicitLeft = -8
-    ExplicitTop = 242
+    ExplicitTop = 200
   end
   object ListBox3: TListBox
     Left = 0
-    Top = 219
+    Top = 162
     Width = 257
-    Height = 135
-    Align = alClient
+    Height = 62
+    Align = alTop
     ItemHeight = 13
     TabOrder = 5
     ExplicitLeft = -8
-    ExplicitTop = 290
-    ExplicitHeight = 72
+    ExplicitTop = 234
+  end
+  object Panel4: TPanel
+    Left = 0
+    Top = 224
+    Width = 257
+    Height = 25
+    Align = alTop
+    Caption = 'Image'
+    TabOrder = 6
+    ExplicitTop = 282
+  end
+  object PanelImage: TPanel
+    Left = 0
+    Top = 249
+    Width = 257
+    Height = 105
+    Align = alClient
+    BevelOuter = bvNone
+    TabOrder = 7
+    ExplicitLeft = 24
+    ExplicitTop = 280
+    ExplicitWidth = 185
+    ExplicitHeight = 41
+    object Image1: TImage
+      Left = 0
+      Top = 0
+      Width = 257
+      Height = 105
+      Align = alClient
+      Enabled = False
+      ExplicitTop = 6
+    end
   end
 end

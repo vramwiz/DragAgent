@@ -38,16 +38,18 @@ interface
 uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics,
   Vcl.Controls, Vcl.Forms, Vcl.Dialogs, ActiveX, ShlObj, ComObj,
-  Vcl.StdCtrls,System.Types,Vcl.ExtCtrls,System.Generics.Collections;
+  Vcl.StdCtrls,System.Types,Vcl.ExtCtrls,System.Generics.Collections, Clipbrd,PngImage;
 
-type TDragAgentRequestFile = procedure (Sender : TObject;FileNames : TStringList) of object;
+type TDragAgentRequestFiles = procedure (Sender : TObject;FileNames : TStringList) of object;
 type TDragAgentRequestText = procedure (Sender : TObject;var Text : string) of object;
+type TDragAgentRequestBitmap = procedure (Sender : TObject;Bitmap : TBitmap) of object;
+type TDragAgentRequestPng = procedure (Sender : TObject;Png : TPngImage) of object;
 type TDragAgentTarget = procedure (Sender: TObject; Button: TMouseButton;Shift: TShiftState; X, Y: Integer) of object;
 
 
-//--------------------------------------------------------------------------//
-//  ドラッグ＆ドロップを管理する基礎クラス                                  //
-//--------------------------------------------------------------------------//
+/// TDragAgent は、任意の VCL コントロールにドラッグ機能（D&D送信）を追加する基底クラスです。
+/// マウス操作をフックし、ドラッグ開始／中断／完了を検出して IDataObject を送信します。
+/// 派生クラスで DoDragRequest および DoDragDataMake を実装して送信形式を指定します。
 type
 
   TDragAgent = class(TWinControl,IDropSource)
@@ -119,7 +121,7 @@ type
     { Private 宣言 }
     FDragFolder     : string;                         // ドロップ先へ送るフォルダ名
     FDragFiles      : TStringList;                    // ドロップ先へ送るファイル一覧(Pathなし)
-    FOnDragRequest  : TDragAgentRequestFile;          // ドラッグ時のデータ要求イベント
+    FOnDragRequest  : TDragAgentRequestFiles;          // ドラッグ時のデータ要求イベント
     // フォルダ名とファイル一覧からターゲットに渡すデータを作成
     function GetFileListDataObject(const Directory: string; Files: TStrings):IDataObject;
 
@@ -134,10 +136,12 @@ type
     constructor Create(AOwner: TComponent);override;
     destructor Destroy;override;
     // ドラッグのデータ生成要求イベント
-    property OnDragRequest : TDragAgentRequestFile read FOnDragRequest write FOnDragRequest;
+    property OnDragRequest : TDragAgentRequestFiles read FOnDragRequest write FOnDragRequest;
   end;
 
-  // ドラッグするためのインターフェイス複数形式に対応
+/// TDragData は、複数の形式（FORMATETC + STGMEDIUM）を保持する IDataObject 実装です。
+/// テキスト・画像・ファイル等、複数のデータ形式を同時にドラッグ送信可能です。
+/// SetData によって任意のフォーマットを追加できます。
 type
   TDragData = class(TInterfacedObject, IDataObject)
   private
@@ -149,7 +153,6 @@ type
     constructor Create;reintroduce;
     destructor Destroy;override;
 
-
     function SetData(const formatetc: TFormatEtc; var medium: TStgMedium; fRelease: BOOL): HResult; stdcall;
     function GetData(const FormatEtcIn: TFormatEtc; out Medium: TStgMedium): HResult; stdcall;
     function GetDataHere(const FormatEtc: TFormatEtc; out Medium: TStgMedium): HResult; stdcall;
@@ -160,12 +163,17 @@ type
     function EnumDAdvise(out EnumAdvise: IEnumStatData): HResult; stdcall;
     function QueryGetData(const FormatEtc: TFormatEtc): HResult; stdcall;
     function EnumFormatEtc(dwDirection: Integer; out EnumFormatEtc: IEnumFormatEtc): HResult; stdcall;
+
+    procedure SetPngData(hg: HGLOBAL);
+    function SavePngToGlobal(Png: TPngImage): HGLOBAL;
+    procedure SetHDropData(Files: TStrings);
   end;
 
 
-  // テキスト関係をドラッグするクラス
+/// TDragText は、テキストデータ（Unicode文字列、HTML形式など）をドラッグで送信するクラスです。
+/// CF_UNICODETEXT や HTML Format を使い、入力欄やチャットアプリなどにペースト感覚で渡せます。
 type
-       TDragTextFormat = set of (dtText, dtHtml);
+  TDragTextFormat = set of (dtText, dtHtml);
   TDragText = class(TDragAgent)
   private
     FDragText       : string;                    // ドロップ先へ送るテキスト
@@ -186,8 +194,66 @@ type
     property OnDragRequest: TDragAgentRequestText read FOnDragRequest write FOnDragRequest;
   end;
 
+/// TDragImage は、画像（ビットマップ、DIB、PNG）をドラッグで送信するためのクラスです。
+/// 複数形式で同時に送信可能で、アプリやブラウザに対応した画像フォーマットを選択できます。
+type
+       TDragImageFormat = set of (diBitmap, diDib,diPng);
+  TDragImage = class(TDragAgent)
+  private
+    FOnDragRequestBitmap  : TDragAgentRequestBitmap;
+    FEnabledFormats       : TDragImageFormat;
+    FOnDragRequestPng     : TDragAgentRequestPng;
+    /// クリップボードやドラッグ送信用の IDataObject を生成して返す
+    function GetDataObject():IDataObject;
+    /// 指定されたビットマップ画像を含む IDataObject を作成する
+    procedure GetBitmapDataObject(Objects: TDragData; Bitmap: TBitmap);
+    // CF_PNG 形式のデータを IDataObject に追加する
+    procedure GetPngDataObject(Objects: TDragData;Png : TPngImage);
+    /// 指定されたビットマップから CF_DIB 形式の画像データを作成して追加する
+    procedure GetDibDataObject(Objects: TDragData; Bitmap: TBitmap);
+    /// 指定されたビットマップを CF_DIB 形式に変換し、グローバルメモリに格納して返す
+    function BuildClipboardDIB(bmp: TBitmap): HGLOBAL;
+    //  TPngImage を PNG 形式のバイナリとしてメモリに保存し、その HGLOBAL ハンドルを返す。
+    function SavePngToGlobal(Png: TPngImage): HGLOBAL;
+  protected
+    procedure DoDragDataMake(const Reset : Boolean);override;
+    procedure DoDragRequest; override;
+    procedure DoDragRequestBitmap(Bitmap : TBitmap);
+    procedure DoDragRequestPng(Png : TPngImage);
+  public
+    // コンストラクタ：ドラッグ用の画像送信コンポーネントを初期化
+    constructor Create(AOwner: TComponent);override;
+    property EnabledFormats: TDragImageFormat read FEnabledFormats write FEnabledFormats;
+    // ドラッグのデータ生成要求イベント
+    property OnDragRequestBitmap: TDragAgentRequestBitmap read FOnDragRequestBitmap write FOnDragRequestBitmap;
+    property OnDragRequestPng: TDragAgentRequestPng read FOnDragRequestPng write FOnDragRequestPng;
+  end;
+
+/// TDragFiles は、実在するファイルパスを CF_HDROP 形式で送信するドラッグコンポーネントです。
+/// Explorer のように複数ファイルをドラッグ＆ドロップで他アプリへ渡すことができます。
+/// 主に Chrome やブラウザアプリとの連携に使用されます（仮想ファイル未使用）。
+type
+  TDragFiles = class(TDragAgent)
+  private
+    FDragFiles: TStringList;
+    FOnDragRequest: TDragAgentRequestFiles;
+
+    procedure DoDragRequestFiles(FileNames: TStringList);
+  protected
+    procedure DoDragRequest; override;
+    procedure DoDragDataMake(const Reset: Boolean); override;
+  public
+    constructor Create(AOwner: TComponent); override;
+    destructor Destroy; override;
+
+    property OnDragRequest: TDragAgentRequestFiles read FOnDragRequest write FOnDragRequest;
+  end;
+
 
 implementation
+
+var
+  CF_PNG: UINT = 0;
 
 procedure DebugLogMsg(const Msg: string);
 begin
@@ -195,7 +261,6 @@ begin
   OutputDebugString(PChar(Msg));
   {$ENDIF}
 end;
-
 
 
 { TDragFile }
@@ -275,25 +340,25 @@ begin
   FMouseDBClicked := True;
   FTimer.Enabled := True;
 
-  DoDragDataMake(True);                                     // ドラッグデータを初期化
-  DoDragCancel();                                     // キャンセルを通知
-  FTarget.EndDrag(False);                             // ドラッグ状態を解除
+  DoDragDataMake(True);                                // ドラッグデータを初期化
+  DoDragCancel();                                      // キャンセルを通知
+  FTarget.EndDrag(False);                              // ドラッグ状態を解除
 end;
 
 
 procedure TDragAgent.CtrlMouseDown(Sender: TObject; Button: TMouseButton;
   Shift: TShiftState; X, Y: Integer);
 begin
-  if Button <> mbLeft then exit;                      // 左クリック降下中でなければ処理しない
+  if Button <> mbLeft then exit;                       // 左クリック降下中でなければ処理しない
 
-  if FMouseDBClicked then exit;                       // マウスクリック直後は処理しない
+  if FMouseDBClicked then exit;                        // マウスクリック直後は処理しない
 
-  FTarget.EndDrag(False);                           // 一度ドラッグを解除
-  FMouseDown := True;                               // マウス降下状態を記憶
-  DoDragRequest();                                  // D&D用データ作成要求
-  DoDragTarget(Button,Shift,X,Y);                   // ドラッグ座標を通知
+  FTarget.EndDrag(False);                              // 一度ドラッグを解除
+  FMouseDown := True;                                  // マウス降下状態を記憶
+  DoDragRequest();                                     // D&D用データ作成要求
+  DoDragTarget(Button,Shift,X,Y);                      // ドラッグ座標を通知
 
-  FDragStartPos := Point(X, Y);                     // ドラッグ開始座標として記録
+  FDragStartPos := Point(X, Y);                        // ドラッグ開始座標として記録
 
 end;
 
@@ -359,23 +424,17 @@ end;
 procedure TDragAgent.DoDragCancel;
 begin
   DebugLogMsg('DO_DRAG_CANCEL');
-  if Assigned(FOnDragCancel) then begin
-    FOnDragCancel(Self);
-  end;
+  if Assigned(FOnDragCancel) then FOnDragCancel(Self);
 end;
 
 procedure TDragAgent.DoDragging;
 begin
-  if Assigned(FOnDragging) then begin
-    FOnDragging(Self);
-  end;
+  if Assigned(FOnDragging) then FOnDragging(Self);
 end;
 
 procedure TDragAgent.DoDragTarget(Button: TMouseButton;Shift: TShiftState; X, Y: Integer);
 begin
-  if Assigned(FOnDragTarget) then begin
-    FOnDragTarget(Self,Button,Shift,X,Y);
-  end;
+  if Assigned(FOnDragTarget) then FOnDragTarget(Self,Button,Shift,X,Y);
 end;
 
 
@@ -774,6 +833,40 @@ begin
 end;
 
 
+function TDragData.SavePngToGlobal(Png: TPngImage): HGLOBAL;
+var
+  Stream: TMemoryStream;
+  Size: Integer;
+  hg: HGLOBAL;
+  pData: Pointer;
+begin
+  Result := 0;
+  if not Assigned(Png) then Exit;
+
+  Stream := TMemoryStream.Create;
+  try
+    Png.SaveToStream(Stream);
+    Size := Stream.Size;
+    if Size = 0 then Exit;
+
+    hg := GlobalAlloc(GMEM_MOVEABLE, Size);
+    if hg = 0 then Exit;
+
+    pData := GlobalLock(hg);
+    if pData = nil then
+    begin
+      GlobalFree(hg);
+      Exit;
+    end;
+
+    Move(Stream.Memory^, pData^, Size);
+    GlobalUnlock(hg);
+    Result := hg;
+  finally
+    Stream.Free;
+  end;
+end;
+
 function TDragData.SetData(const formatetc: TFormatEtc; var medium: TStgMedium;
   fRelease: BOOL): HResult;
 var
@@ -816,8 +909,362 @@ begin
   Result := S_OK;
 end;
 
+procedure TDragData.SetHDropData(Files: TStrings);
+var
+  TotalSize, i: Integer;
+  hDrop: HGLOBAL;
+  pDrop: PDropFiles;
+  pStr: PWideChar;
+  s: string;
+  FormatEtc: TFormatEtc;
+  Medium: TStgMedium;
+begin
+  if Files.Count = 0 then Exit;
+
+  // 必要なバイト数を計算（全ファイル名 + Null + 最終 Null）
+  TotalSize := SizeOf(DROPFILES);
+  for i := 0 to Files.Count - 1 do
+    Inc(TotalSize, (Length(Files[i]) + 1) * SizeOf(WideChar));
+  Inc(TotalSize, SizeOf(WideChar)); // 最後のNull
+
+  hDrop := GlobalAlloc(GHND or GMEM_SHARE, TotalSize);
+  if hDrop = 0 then Exit;
+
+  pDrop := GlobalLock(hDrop);
+  try
+    pDrop^.pFiles := SizeOf(DROPFILES);
+    pDrop^.fWide := True;
+    pStr := PWideChar(PByte(pDrop) + SizeOf(DROPFILES));
+
+    for i := 0 to Files.Count - 1 do
+    begin
+      s := Files[i];
+      StrPCopy(pStr, s);  // s は string で pStr は PWideChar
+      Inc(pStr, Length(s) + 1);
+    end;
+    pStr^ := #0; // 最後の null
+  finally
+    GlobalUnlock(hDrop);
+  end;
+
+  FormatEtc := MakeFormatEtc(CF_HDROP, TYMED_HGLOBAL);
+  Medium.tymed := TYMED_HGLOBAL;
+  Medium.hGlobal := hDrop;
+  Medium.unkForRelease := nil;
+
+  SetData(FormatEtc, Medium, True);
+end;
+
+procedure TDragData.SetPngData(hg: HGLOBAL);
+var
+  fmt: TFormatEtc;
+  med: TStgMedium;
+begin
+  // FORMATETC 構造体の設定
+  fmt.cfFormat := CF_PNG;
+  fmt.ptd := nil;
+  fmt.dwAspect := DVASPECT_CONTENT;
+  fmt.lindex := -1;
+  fmt.tymed := TYMED_HGLOBAL;
+
+  // STGMEDIUM 構造体の設定
+  med.tymed := TYMED_HGLOBAL;
+  med.hGlobal := hg;
+  med.unkForRelease := nil;
+
+  // IDataObject にデータを設定
+  OleCheck(Self.SetData(fmt, med, True)); // True: Release responsibility transferred
+end;
+
+{ TDragImage }
+
+/// 指定されたビットマップを CF_DIB 形式に変換し、グローバルメモリに格納して返す
+function TDragImage.BuildClipboardDIB(bmp: TBitmap): HGLOBAL;
+var
+  rowSize, dibSize: Integer;
+  tmp: TBitmap;
+  hDIB: HGLOBAL;
+  pDIB, pBits, srcLine, dest: PByte;
+  x, y: Integer;
+  bih: BITMAPINFOHEADER;
+begin
+  Result := 0;
+
+  if not Assigned(bmp) then Exit;
+
+  // pf32bit に変換して安全にスキャンライン操作
+  tmp := TBitmap.Create;
+  try
+    tmp.PixelFormat := pf32bit;
+    tmp.Width := bmp.Width;
+    tmp.Height := bmp.Height;
+    tmp.Canvas.Draw(0, 0, bmp);  // 描画して変換
+
+    rowSize := ((tmp.Width * 3 + 3) div 4) * 4;
+    dibSize := SizeOf(BITMAPINFOHEADER) + rowSize * tmp.Height;
+
+    hDIB := GlobalAlloc(GMEM_MOVEABLE, dibSize);
+    if hDIB = 0 then Exit;
+
+    pDIB := GlobalLock(hDIB);
+    if pDIB = nil then
+    begin
+      GlobalFree(hDIB);
+      Exit;
+    end;
+
+    try
+      // BITMAPINFOHEADER 書き込み
+      FillChar(bih, SizeOf(bih), 0);
+      bih.biSize := SizeOf(bih);
+      bih.biWidth := tmp.Width;
+      bih.biHeight := tmp.Height;
+      bih.biPlanes := 1;
+      bih.biBitCount := 24;
+      bih.biCompression := BI_RGB;
+      bih.biSizeImage := rowSize * tmp.Height;
+      Move(bih, pDIB^, SizeOf(bih));
+
+      // ピクセルデータコピー（BGR順）
+      pBits := pDIB + SizeOf(bih);
+      for y := tmp.Height - 1 downto 0 do
+      begin
+        srcLine := tmp.ScanLine[y];
+        dest := pBits + (tmp.Height - 1 - y) * rowSize;
+        for x := 0 to tmp.Width - 1 do
+        begin
+          dest^ := srcLine[x * 4 + 0]; Inc(dest); // Blue
+          dest^ := srcLine[x * 4 + 1]; Inc(dest); // Green
+          dest^ := srcLine[x * 4 + 2]; Inc(dest); // Red
+        end;
+      end;
+    finally
+      GlobalUnlock(hDIB);
+    end;
+
+    Result := hDIB;
+  finally
+    tmp.Free;
+  end;
+end;
+
+// コンストラクタ：ドラッグ用の画像送信コンポーネントを初期化
+constructor TDragImage.Create(AOwner: TComponent);
+begin
+  inherited;
+  FEnabledFormats := [diDib];  // デフォルトを設定
+
+end;
+
+procedure TDragImage.DoDragDataMake(const Reset: Boolean);
+begin
+  FDataObject := GetDataObject();
+end;
+
+procedure TDragImage.DoDragRequest;
+begin
+  FDataObject := GetDataObject();  // CF_BITMAP を含む IDataObject を生成
+end;
+
+procedure TDragImage.DoDragRequestBitmap(Bitmap: TBitmap);
+begin
+  if Assigned(FOnDragRequestBitmap) then FOnDragRequestBitmap(Self,Bitmap);
+end;
+
+procedure TDragImage.DoDragRequestPng(Png: TPngImage);
+begin
+  if Assigned(FOnDragRequestPng) then FOnDragRequestPng(Self,Png);
+end;
+
+/// 指定されたビットマップ画像を含む IDataObject を作成する
+procedure TDragImage.GetBitmapDataObject(Objects: TDragData; Bitmap: TBitmap);
+var
+  Medium: TStgMedium;
+  FormatEtc: TFormatEtc;
+  HCopy: HBITMAP;
+  GdiBmp: TBitmap;
+begin
+  GdiBmp := TBitmap.Create;
+  try
+    GdiBmp.PixelFormat := pf24bit;
+    GdiBmp.SetSize(Bitmap.Width, Bitmap.Height);
+    GdiBmp.Canvas.Draw(0, 0, Bitmap);
+
+    HCopy := CopyImage(GdiBmp.Handle, IMAGE_BITMAP, 0, 0, LR_COPYRETURNORG);
+    if HCopy = 0 then Exit;
+
+    FormatEtc := MakeFormatEtc(CF_BITMAP, TYMED_GDI);
+    Medium.tymed := TYMED_GDI;
+    Medium.hBitmap := HCopy;
+    Medium.unkForRelease := nil;  // 暫定
+
+    Objects.SetData(FormatEtc, Medium, True);
+  finally
+    GdiBmp.Free;
+  end;
+end;
+
+/// クリップボードやドラッグ送信用の IDataObject を生成して返す
+function TDragImage.GetDataObject(): IDataObject;
+var
+  Objects: TDragData;
+var
+  bmp: TBitmap;
+  png : TPngImage;
+begin
+  bmp := TBitmap.Create;
+  png := TPngImage.Create;
+  try
+      Objects := TDragData.Create;
+  if (diBitmap in FEnabledFormats) or
+     (diDib    in FEnabledFormats) then
+      DoDragRequestBitmap(bmp); // 呼び出し元で画像を描画してもらう
+
+  if diPng in FEnabledFormats then
+    DoDragRequestPng(png);
+
+
+  if diBitmap in FEnabledFormats then
+    GetBitmapDataObject(Objects, bmp);
+
+  if diDib in FEnabledFormats then
+    GetDibDataObject(Objects, bmp);
+
+  if diPng in FEnabledFormats then
+    GetPngDataObject(Objects, png);  // ← PNG対応を追加
+
+  finally
+    png.Free;
+    bmp.Free;
+  end;
+  Result := Objects;
+end;
+
+/// 指定されたビットマップから CF_DIB 形式の画像データを作成して追加する
+procedure TDragImage.GetDibDataObject(Objects: TDragData; Bitmap: TBitmap);
+var
+  Medium: TStgMedium;
+  FormatEtc: TFormatEtc;
+  hDIB: HGLOBAL;
+begin
+  hDIB := BuildClipboardDIB(Bitmap);
+  if hDIB = 0 then Exit;
+
+  FormatEtc := MakeFormatEtc(CF_DIB, TYMED_HGLOBAL);
+  Medium.tymed := TYMED_HGLOBAL;
+  Medium.hGlobal := hDIB;
+  Medium.unkForRelease := nil;
+
+  Objects.SetData(FormatEtc, Medium, True);
+end;
+
+// CF_PNG 形式のデータを IDataObject に追加する
+procedure TDragImage.GetPngDataObject(Objects: TDragData; Png : TPngImage);
+var
+  hg: HGLOBAL;
+begin
+  if not Assigned(Png) or Png.Empty then Exit;
+
+  // PNG データをメモリに保存し、HGLOBAL に変換
+  hg := SavePngToGlobal(Png); // ← 事前に定義された関数（例：SavePngToGlobal）
+
+  if hg <> 0 then
+  begin
+    // CF_PNG を設定（独自定義されていると仮定）
+    Objects.SetPngData(hg); // HGLOBAL を渡して PNG データを登録
+    // SetPngData の中で owns handle = true の処理が含まれているはず
+  end;
+end;
+
+//  TPngImage を PNG 形式のバイナリとしてメモリに保存し、その HGLOBAL ハンドルを返す。
+function TDragImage.SavePngToGlobal(Png: TPngImage): HGLOBAL;
+var
+  Stream: TMemoryStream;
+  Size: Integer;
+  hg: HGLOBAL;
+  Ptr: Pointer;
+begin
+  Result := 0;
+  if not Assigned(Png) then Exit;
+
+  Stream := TMemoryStream.Create;
+  try
+    Png.SaveToStream(Stream);
+    Size := Stream.Size;
+    hg := GlobalAlloc(GMEM_MOVEABLE, Size);
+    if hg = 0 then Exit;
+
+    Ptr := GlobalLock(hg);
+    if Assigned(Ptr) then
+    begin
+      Move(Stream.Memory^, Ptr^, Size);
+      GlobalUnlock(hg);
+      Result := hg;
+    end
+    else
+    begin
+      GlobalFree(hg);
+    end;
+  finally
+    Stream.Free;
+  end;
+end;
+
+
+{ TDragFiles }
+
+constructor TDragFiles.Create(AOwner: TComponent);
+begin
+  inherited;
+  FDragFiles := TStringList.Create;
+end;
+
+destructor TDragFiles.Destroy;
+begin
+  FDragFiles.Free;
+  inherited;
+end;
+
+procedure TDragFiles.DoDragDataMake(const Reset: Boolean);
+var
+  Data: TDragData;
+begin
+  if Reset then
+  begin
+    FDragFiles.Clear;
+    Exit;
+  end;
+
+  if FDragFiles.Count = 0 then Exit;
+
+  Data := TDragData.Create;
+  Data.SetHDropData(FDragFiles);  // ← ここで CF_HDROP をセット
+  FDataObject := Data;
+end;
+
+procedure TDragFiles.DoDragRequest;
+var
+  FileNames: TStringList;
+begin
+  FileNames := TStringList.Create;
+  try
+    DoDragRequestFiles(FileNames);
+    FDragFiles.Assign(FileNames);
+  finally
+    FileNames.Free;
+  end;
+end;
+
+procedure TDragFiles.DoDragRequestFiles(FileNames: TStringList);
+begin
+  if Assigned(FOnDragRequest) then
+    FOnDragRequest(Self, FileNames);
+end;
+
 initialization
   OleInitialize(nil);
+  CF_PNG := RegisterClipboardFormat('PNG');
+
 finalization
   OleUninitialize;
 

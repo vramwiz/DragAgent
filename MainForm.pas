@@ -4,7 +4,7 @@ interface
 
 uses
   Winapi.Windows, Winapi.Messages, System.SysUtils, System.Variants, System.Classes, Vcl.Graphics,
-  Vcl.Controls, Vcl.Forms, Vcl.Dialogs,DragAgent, Vcl.StdCtrls, Vcl.ExtCtrls;
+  Vcl.Controls, Vcl.Forms, Vcl.Dialogs,DragAgent, Vcl.StdCtrls, Vcl.ExtCtrls,PngImage;
 
 type
   TFormMain = class(TForm)
@@ -14,6 +14,9 @@ type
     ListBox2: TListBox;
     Panel3: TPanel;
     ListBox3: TListBox;
+    Panel4: TPanel;
+    Image1: TImage;
+    PanelImage: TPanel;
     procedure FormCreate(Sender: TObject);
     procedure FormDestroy(Sender: TObject);
     procedure FormShow(Sender: TObject);
@@ -21,10 +24,14 @@ type
     { Private 宣言 }
     FDragText : TDragText;
     FDragHtml : TDragText;
-    FDragFile : TDragShellFile;
+    FDragFile : TDragFiles;
+    FDragImage : TDragImage;
+    procedure ShowImage;
     procedure OnDragRequestFile(Sender : TObject;FileNames : TStringList);
     procedure OnDragRequestText(Sender : TObject;var Text : string);
     procedure OnDragRequestHtml(Sender : TObject;var Text : string);
+    procedure OnDragRequestBitmap(Sender : TObject;Bitmap : TBitmap);
+    procedure OnDragRequestPng(Sender : TObject;Png : TPngImage);
   public
     { Public 宣言 }
   end;
@@ -51,13 +58,19 @@ begin
   FDragHtml.EnabledFormats := [dtHtml];
   FDragHtml.Attach(ListBox2);
 
-  FDragFile := TDragShellFile.Create(Self);
+  FDragFile := TDragFiles.Create(Self);
   FDragFile.OnDragRequest := OnDragRequestFile;
   FDragFile.Attach(ListBox3);
+
+  FDragImage := TDragImage.Create(Self);
+  FDragImage.OnDragRequestBitmap := OnDragRequestBitmap;
+  FDragImage.Attach(PanelImage);
+  FDragImage.OnDragRequestPng := OnDragRequestPng;
 end;
 
 procedure TFormMain.FormDestroy(Sender: TObject);
 begin
+  FDragImage.Free;
   FDragFile.Free;
   FDragHtml.Free;
   FDragText.Free;
@@ -108,6 +121,7 @@ begin
   finally
     ListBox3.Items.EndUpdate;
   end;
+  ShowImage;
 end;
 
 procedure TFormMain.OnDragRequestText(Sender: TObject; var Text: string);
@@ -115,9 +129,76 @@ begin
   Text := ListBox1.Items[ListBox1.ItemIndex];
 end;
 
+procedure TFormMain.ShowImage;
+begin
+  Image1.Picture.Bitmap.SetSize(200, 100);  // 幅200×高さ100のビットマップを作成
+  with Image1.Picture.Bitmap.Canvas do
+  begin
+    Brush.Color := clWhite;
+    FillRect(Rect(0, 0, 200, 100));
+
+    Pen.Color := clRed;
+    Brush.Color := clYellow;
+    Rectangle(10, 10, 190, 90);
+
+    Font.Color := clBlue;
+    Font.Size := 12;
+    TextOut(40, 40, 'Sample Image');
+  end;
+end;
+
 procedure TFormMain.OnDragRequestHtml(Sender: TObject; var Text: string);
 begin
   Text := ListBox2.Items[ListBox2.ItemIndex];
+end;
+
+procedure TFormMain.OnDragRequestPng(Sender: TObject; Png: TPngImage);
+var
+  Bmp: TBitmap;
+begin
+  Bmp := TBitmap.Create;
+  try
+    Bmp.SetSize(200, 100);
+    Bmp.PixelFormat := pf32bit;
+
+    with Bmp.Canvas do
+    begin
+      Brush.Color := clWhite;
+      FillRect(Rect(0, 0, Bmp.Width, Bmp.Height));
+
+      Pen.Color := clGreen;
+      Brush.Color := clFuchsia;
+      Rectangle(10, 10, 190, 90);
+
+      Font.Size := 12;
+      Font.Color := clBlack;
+      TextOut(40, 40, 'PNGイメージ');
+    end;
+
+    Png.Assign(Bmp); // ←ここでTPngImageに変換
+  finally
+    Bmp.Free;
+  end;
+end;
+
+procedure TFormMain.OnDragRequestBitmap(Sender: TObject; Bitmap: TBitmap);
+begin
+  Bitmap.SetSize(200, 100);
+  Bitmap.PixelFormat := pf32bit;
+
+  with Bitmap.Canvas do
+  begin
+    Brush.Color := clWhite;
+    FillRect(Rect(0, 0, Bitmap.Width, Bitmap.Height));
+
+    Pen.Color := clBlue;
+    Brush.Color := clYellow;
+    Rectangle(10, 10, 190, 90);
+
+    Font.Size := 12;
+    Font.Color := clRed;
+    TextOut(50, 40, 'ドラッグ画像');
+  end;
 end;
 
 procedure TFormMain.OnDragRequestFile(Sender: TObject; FileNames: TStringList);
